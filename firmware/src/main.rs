@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+use core::ops::{Deref, DerefMut};
+
 use defmt_rtt as _;
 use panic_probe as _;
 use stm32f1xx_hal as _;
@@ -21,6 +23,8 @@ mod app {
         HIDClass, HidClassSettings, HidCountryCode, HidProtocol, HidSubClass, ProtocolModeConfig,
     };
 
+    use crate::Usb;
+
     #[local]
     struct Local {
         timer: CounterHz<TIM3>,
@@ -29,8 +33,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        usb_dev: UsbDevice<'static, UsbBusType>,
-        usb_hid: HIDClass<'static, UsbBusType>,
+        usb: Usb<'static, UsbBusType>,
     }
 
     #[init(local = [usb_bus: Option<UsbBusAllocator<UsbBusType>> = None])]
@@ -86,13 +89,15 @@ mod app {
         watchdog.start(10.millis());
 
         (
-            Shared { usb_dev, usb_hid },
+            Shared {
+                usb: Usb::new(usb_dev, usb_hid),
+            },
             Local { timer, watchdog },
             init::Monotonics(),
         )
     }
 
-    #[task(binds = TIM3, priority = 1, local = [timer, watchdog], shared = [usb_hid])]
+    #[task(binds = TIM3, priority = 1, local = [timer, watchdog], shared = [usb])]
     fn tick(cx: tick::Context) {
         defmt::info!("tick");
 
@@ -102,29 +107,50 @@ mod app {
         // TODO: scan keyboard
     }
 
-    #[task(binds = USB_HP_CAN_TX, priority = 2, shared = [usb_dev, usb_hid])]
-    fn usb_tx(cx: usb_tx::Context) {
+    #[task(binds = USB_HP_CAN_TX, priority = 2, shared = [usb])]
+    fn usb_tx(mut cx: usb_tx::Context) {
         defmt::info!("usb_tx");
 
-        let usb_tx::SharedResources { usb_dev, usb_hid } = cx.shared;
-
-        (usb_dev, usb_hid).lock(|usb_dev, usb_hid| super::usb_poll(usb_dev, usb_hid));
+        cx.shared.usb.lock(|usb| usb.poll());
     }
 
-    #[task(binds = USB_LP_CAN_RX0, priority = 2, shared = [usb_dev, usb_hid])]
-    fn usb_rx(cx: usb_rx::Context) {
+    #[task(binds = USB_LP_CAN_RX0, priority = 2, shared = [usb])]
+    fn usb_rx(mut cx: usb_rx::Context) {
         defmt::info!("usb_rx");
 
-        let usb_rx::SharedResources { usb_dev, usb_hid } = cx.shared;
-
-        (usb_dev, usb_hid).lock(|usb_dev, usb_hid| super::usb_poll(usb_dev, usb_hid));
+        cx.shared.usb.lock(|usb| usb.poll());
     }
 }
 
-fn usb_poll<B: UsbBus>(usb_dev: &mut UsbDevice<B>, usb_hid: &mut HIDClass<B>) {
-    if usb_dev.poll(&mut [usb_hid]) {
-        // FIXME: since this is a stub I don't think it's necessary
-        usb_hid.poll();
+pub struct Usb<'a, B: UsbBus> {
+    dev: UsbDevice<'a, B>,
+    hid: HIDClass<'a, B>,
+}
+
+impl<'a, B: UsbBus> Usb<'a, B> {
+    fn new(dev: UsbDevice<'a, B>, hid: HIDClass<'a, B>) -> Self {
+        Self { dev, hid }
+    }
+
+    fn poll(&mut self) {
+        if self.dev.poll(&mut [&mut self.hid]) {
+            // FIXME: since this is a stub I don't think it's necessary
+            self.hid.poll();
+        }
+    }
+}
+
+impl<'a, B: UsbBus> Deref for Usb<'a, B> {
+    type Target = HIDClass<'a, B>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.hid
+    }
+}
+
+impl<'a, B: UsbBus> DerefMut for Usb<'a, B> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.hid
     }
 }
 
