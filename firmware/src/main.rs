@@ -14,6 +14,7 @@ mod app {
         prelude::*,
         timer::{CounterHz, Event},
         usb::{Peripheral, UsbBus, UsbBusType},
+        watchdog::IndependentWatchdog,
     };
     use usb_device::{class_prelude::*, prelude::*};
     use usbd_hid::hid_class::{
@@ -23,6 +24,7 @@ mod app {
     #[local]
     struct Local {
         timer: CounterHz<TIM3>,
+        watchdog: IndependentWatchdog,
     }
 
     #[shared]
@@ -61,7 +63,6 @@ mod app {
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x16c0, 0x27db))
             .manufacturer("Mobs Workshop")
             .product("Keeb")
-            .supports_remote_wakeup(true)
             .build();
 
         let usb_hid = HIDClass::new_with_settings(
@@ -80,21 +81,28 @@ mod app {
         timer.listen(Event::Update);
         timer.start(1.kHz()).unwrap();
 
+        // timer is running 10x faster so should catch a problem fast
+        let mut watchdog = IndependentWatchdog::new(device.IWDG);
+        watchdog.start(10.millis());
+
         (
             Shared { usb_dev, usb_hid },
-            Local { timer },
+            Local { timer, watchdog },
             init::Monotonics(),
         )
     }
 
-    #[task(binds = TIM3, local = [timer])]
+    #[task(binds = TIM3, priority = 1, local = [timer, watchdog], shared = [usb_hid])]
     fn tick(cx: tick::Context) {
         defmt::info!("tick");
 
         cx.local.timer.clear_interrupt(Event::Update);
+        cx.local.watchdog.feed();
+
+        // TODO: scan keyboard
     }
 
-    #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, usb_hid])]
+    #[task(binds = USB_HP_CAN_TX, priority = 2, shared = [usb_dev, usb_hid])]
     fn usb_tx(cx: usb_tx::Context) {
         defmt::info!("usb_tx");
 
@@ -103,7 +111,7 @@ mod app {
         (usb_dev, usb_hid).lock(|usb_dev, usb_hid| super::usb_poll(usb_dev, usb_hid));
     }
 
-    #[task(binds = USB_LP_CAN_RX0, shared = [usb_dev, usb_hid])]
+    #[task(binds = USB_LP_CAN_RX0, priority = 2, shared = [usb_dev, usb_hid])]
     fn usb_rx(cx: usb_rx::Context) {
         defmt::info!("usb_rx");
 
@@ -115,7 +123,8 @@ mod app {
 
 fn usb_poll<B: UsbBus>(usb_dev: &mut UsbDevice<B>, usb_hid: &mut HIDClass<B>) {
     if usb_dev.poll(&mut [usb_hid]) {
-        // TODO: send report?
+        // FIXME: since this is a stub I don't think it's necessary
+        usb_hid.poll();
     }
 }
 
