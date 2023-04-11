@@ -1,3 +1,5 @@
+//! The Keeb firmware, using [RTIC](https://rtic.rs) and [keyberon](https://github.com/TeXitoi/keyberon).
+
 #![no_std]
 #![no_main]
 
@@ -6,7 +8,7 @@ mod leds;
 mod usb;
 
 use defmt_rtt as _;
-use keyberon::{debounce::Debouncer, layout::Layout, matrix::Matrix, new_class, new_device};
+use keyberon::{debounce::Debouncer, layout::Layout, matrix::Matrix};
 use panic_probe as _;
 use stm32f1xx_hal::{
     gpio::{ErasedPin, Input, Output, PullUp},
@@ -37,11 +39,13 @@ mod app {
 
     #[shared]
     struct Shared {
-        usb: Usb<'static, UsbBusType, leds::Leds>,
+        usb: Usb<'static, UsbBusType, ()>,
     }
 
     #[init(local = [usb_bus: Option<UsbBusAllocator<UsbBusType>> = None])]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
+        defmt::trace!("init");
+
         let device = cx.device;
 
         let mut flash = device.FLASH.constrain();
@@ -97,9 +101,8 @@ mod app {
         };
 
         let usb_bus = cx.local.usb_bus.insert(UsbBus::new(usb));
-        let usb_dev = new_device(usb_bus);
-        let usb_hid = new_class(usb_bus, leds::Leds);
-        let usb = Usb::new(usb_dev, usb_hid);
+        // TODO: setup leds
+        let usb = Usb::new(usb_bus, ());
 
         let mut timer = device.TIM3.counter_hz(&clocks);
         timer.listen(Event::Update);

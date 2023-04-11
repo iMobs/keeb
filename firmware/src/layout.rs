@@ -1,3 +1,6 @@
+//! Here we define the keyboard layout and layers for [keyberon](https://github.com/TeXitoi/keyberon)
+//! using the new layout macro.
+
 use keyberon::layout::{layout, Layers};
 
 use crate::{NUM_COLS, NUM_LAYERS, NUM_ROWS};
