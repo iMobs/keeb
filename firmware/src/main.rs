@@ -1,39 +1,43 @@
 #![no_std]
 #![no_main]
 
-use core::ops::{Deref, DerefMut};
+mod layout;
+mod leds;
+mod usb;
 
 use defmt_rtt as _;
+use keyberon::{debounce::Debouncer, layout::Layout, matrix::Matrix, new_class, new_device};
 use panic_probe as _;
-use stm32f1xx_hal as _;
-use usb_device::{class_prelude::*, prelude::*};
-use usbd_hid::hid_class::HIDClass;
+use stm32f1xx_hal::{
+    gpio::{ErasedPin, Input, Output, PullUp},
+    pac::TIM3,
+    prelude::*,
+    timer::{CounterHz, Event},
+    usb::{Peripheral, UsbBus, UsbBusType},
+    watchdog::IndependentWatchdog,
+};
+use usb::Usb;
+use usb_device::bus::UsbBusAllocator;
+
+const NUM_COLS: usize = 14;
+const NUM_ROWS: usize = 6;
+const NUM_LAYERS: usize = 2;
 
 #[rtic::app(device = stm32f1xx_hal::pac)]
 mod app {
-    use stm32f1xx_hal::{
-        pac::TIM3,
-        prelude::*,
-        timer::{CounterHz, Event},
-        usb::{Peripheral, UsbBus, UsbBusType},
-        watchdog::IndependentWatchdog,
-    };
-    use usb_device::{class_prelude::*, prelude::*};
-    use usbd_hid::hid_class::{
-        HIDClass, HidClassSettings, HidCountryCode, HidProtocol, HidSubClass, ProtocolModeConfig,
-    };
-
-    use crate::Usb;
+    use super::*;
 
     #[local]
     struct Local {
+        layout: Layout<NUM_COLS, NUM_ROWS, NUM_LAYERS>,
+        matrix: Matrix<ErasedPin<Input<PullUp>>, ErasedPin<Output>, NUM_COLS, NUM_ROWS>,
         timer: CounterHz<TIM3>,
         watchdog: IndependentWatchdog,
     }
 
     #[shared]
     struct Shared {
-        usb: Usb<'static, UsbBusType>,
+        usb: Usb<'static, UsbBusType, leds::Leds>,
     }
 
     #[init(local = [usb_bus: Option<UsbBusAllocator<UsbBusType>> = None])]
@@ -52,7 +56,39 @@ mod app {
 
         debug_assert!(clocks.usbclk_valid());
 
-        let gpioa = device.GPIOA.split();
+        let layout = Layout::new(&layout::LAYERS);
+
+        let mut gpioa = device.GPIOA.split();
+        let mut gpiob = device.GPIOB.split();
+
+        // TODO: correct these pin assignments once design is done
+        let matrix = Matrix::new(
+            [
+                gpiob.pb0.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb1.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb2.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb5.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb6.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb7.into_pull_up_input(&mut gpiob.crl).erase(),
+                gpiob.pb8.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb9.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb10.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb11.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb12.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb13.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb14.into_pull_up_input(&mut gpiob.crh).erase(),
+                gpiob.pb15.into_pull_up_input(&mut gpiob.crh).erase(),
+            ],
+            [
+                gpioa.pa0.into_push_pull_output(&mut gpioa.crl).erase(),
+                gpioa.pa1.into_push_pull_output(&mut gpioa.crl).erase(),
+                gpioa.pa2.into_push_pull_output(&mut gpioa.crl).erase(),
+                gpioa.pa3.into_push_pull_output(&mut gpioa.crl).erase(),
+                gpioa.pa4.into_push_pull_output(&mut gpioa.crl).erase(),
+                gpioa.pa5.into_push_pull_output(&mut gpioa.crl).erase(),
+            ],
+        )
+        .unwrap();
 
         let usb = Peripheral {
             usb: device.USB,
@@ -61,24 +97,9 @@ mod app {
         };
 
         let usb_bus = cx.local.usb_bus.insert(UsbBus::new(usb));
-
-        // https://github.com/obdev/v-usb/blob/7a28fdc685952412dad2b8842429127bc1cf9fa7/usbdrv/USB-IDs-for-free.txt#L128
-        let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(0x16c0, 0x27db))
-            .manufacturer("Mobs Workshop")
-            .product("Keeb")
-            .build();
-
-        let usb_hid = HIDClass::new_with_settings(
-            usb_bus,
-            &[0], // TODO: add descriptor
-            1,
-            HidClassSettings {
-                subclass: HidSubClass::NoSubClass,
-                protocol: HidProtocol::Keyboard,
-                config: ProtocolModeConfig::ForceReport,
-                locale: HidCountryCode::US,
-            },
-        );
+        let usb_dev = new_device(usb_bus);
+        let usb_hid = new_class(usb_bus, leds::Leds);
+        let usb = Usb::new(usb_dev, usb_hid);
 
         let mut timer = device.TIM3.counter_hz(&clocks);
         timer.listen(Event::Update);
@@ -89,68 +110,69 @@ mod app {
         watchdog.start(10.millis());
 
         (
-            Shared {
-                usb: Usb::new(usb_dev, usb_hid),
+            Shared { usb },
+            Local {
+                layout,
+                matrix,
+                timer,
+                watchdog,
             },
-            Local { timer, watchdog },
             init::Monotonics(),
         )
     }
 
-    #[task(binds = TIM3, priority = 1, local = [timer, watchdog], shared = [usb])]
+    #[task(
+        binds = TIM3,
+        priority = 1,
+        local = [
+            debouncer: Debouncer<[[bool; NUM_COLS]; NUM_ROWS]> = Debouncer::new(
+                [[false; NUM_COLS]; NUM_ROWS],
+                [[false; NUM_COLS]; NUM_ROWS],
+                5,
+            ),
+            layout,
+            matrix,
+            timer,
+            watchdog,
+        ],
+        shared = [usb],
+    )]
     fn tick(cx: tick::Context) {
-        defmt::info!("tick");
+        let tick::LocalResources {
+            debouncer,
+            layout,
+            matrix,
+            timer,
+            watchdog,
+        } = cx.local;
+        let tick::SharedResources { mut usb } = cx.shared;
 
-        cx.local.timer.clear_interrupt(Event::Update);
-        cx.local.watchdog.feed();
+        timer.clear_interrupt(Event::Update);
+        watchdog.feed();
 
-        // TODO: scan keyboard
+        for event in debouncer.events(matrix.get().unwrap()) {
+            layout.event(event);
+        }
+
+        // If there are ever custom events handle them here.
+        layout.tick();
+
+        let report = layout.keycodes().collect();
+
+        // I think the report is picked up within usb_device when polled
+        usb.lock(|usb| usb.device_mut().set_keyboard_report(report));
     }
 
     #[task(binds = USB_HP_CAN_TX, priority = 2, shared = [usb])]
     fn usb_tx(mut cx: usb_tx::Context) {
-        defmt::info!("usb_tx");
-
+        defmt::trace!("usb_tx");
         cx.shared.usb.lock(|usb| usb.poll());
     }
 
     #[task(binds = USB_LP_CAN_RX0, priority = 2, shared = [usb])]
     fn usb_rx(mut cx: usb_rx::Context) {
-        defmt::info!("usb_rx");
-
+        defmt::trace!("usb_rx");
         cx.shared.usb.lock(|usb| usb.poll());
-    }
-}
-
-pub struct Usb<'a, B: UsbBus> {
-    dev: UsbDevice<'a, B>,
-    hid: HIDClass<'a, B>,
-}
-
-impl<'a, B: UsbBus> Usb<'a, B> {
-    fn new(dev: UsbDevice<'a, B>, hid: HIDClass<'a, B>) -> Self {
-        Self { dev, hid }
-    }
-
-    fn poll(&mut self) {
-        if self.dev.poll(&mut [&mut self.hid]) {
-            // FIXME: since this is a stub I don't think it's necessary
-            self.hid.poll();
-        }
-    }
-}
-
-impl<'a, B: UsbBus> Deref for Usb<'a, B> {
-    type Target = HIDClass<'a, B>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.hid
-    }
-}
-
-impl<'a, B: UsbBus> DerefMut for Usb<'a, B> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.hid
     }
 }
 
