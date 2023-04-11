@@ -10,7 +10,9 @@ use usbd_hid::hid_class::HIDClass;
 #[rtic::app(device = stm32f1xx_hal::pac)]
 mod app {
     use stm32f1xx_hal::{
+        pac::TIM3,
         prelude::*,
+        timer::{CounterHz, Event},
         usb::{Peripheral, UsbBus, UsbBusType},
     };
     use usb_device::{class_prelude::*, prelude::*};
@@ -19,7 +21,9 @@ mod app {
     };
 
     #[local]
-    struct Local {}
+    struct Local {
+        timer: CounterHz<TIM3>,
+    }
 
     #[shared]
     struct Shared {
@@ -72,7 +76,22 @@ mod app {
             },
         );
 
-        (Shared { usb_dev, usb_hid }, Local {}, init::Monotonics())
+        let mut timer = device.TIM3.counter_hz(&clocks);
+        timer.listen(Event::Update);
+        timer.start(1.kHz()).unwrap();
+
+        (
+            Shared { usb_dev, usb_hid },
+            Local { timer },
+            init::Monotonics(),
+        )
+    }
+
+    #[task(binds = TIM3, local = [timer])]
+    fn tick(cx: tick::Context) {
+        defmt::info!("tick");
+
+        cx.local.timer.clear_interrupt(Event::Update);
     }
 
     #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, usb_hid])]
