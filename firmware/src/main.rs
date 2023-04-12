@@ -47,31 +47,19 @@ mod app {
 
         let pins = pins(device.GPIOA, device.GPIOB);
 
+        macro_rules! ep {
+            ($p: expr) => ($p.erase());
+            ($($p: expr),+ $(,)?) => (
+                [$(ep!($p)),+]
+            );
+        }
+
         let matrix = Matrix::new(
-            [
-                pins.col0.erase(),
-                pins.col1.erase(),
-                pins.col2.erase(),
-                pins.col3.erase(),
-                pins.col4.erase(),
-                pins.col5.erase(),
-                pins.col6.erase(),
-                pins.col7.erase(),
-                pins.col8.erase(),
-                pins.col9.erase(),
-                pins.col10.erase(),
-                pins.col11.erase(),
-                pins.col12.erase(),
-                pins.col13.erase(),
+            ep![
+                pins.col0, pins.col1, pins.col2, pins.col3, pins.col4, pins.col5, pins.col6,
+                pins.col7, pins.col8, pins.col9, pins.col10, pins.col11, pins.col12, pins.col13,
             ],
-            [
-                pins.row0.erase(),
-                pins.row1.erase(),
-                pins.row2.erase(),
-                pins.row3.erase(),
-                pins.row4.erase(),
-                pins.row5.erase(),
-            ],
+            ep![pins.row0, pins.row1, pins.row2, pins.row3, pins.row4, pins.row5,],
         )
         .unwrap();
 
