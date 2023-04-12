@@ -16,7 +16,7 @@ use stm32f1xx_hal::{
     prelude::*,
     timer::{CounterHz, Event},
     usb::{Peripheral, UsbBus, UsbBusType},
-    watchdog::IndependentWatchdog,
+    // watchdog::IndependentWatchdog,
 };
 use usb::Usb;
 use usb_device::bus::UsbBusAllocator;
@@ -34,7 +34,7 @@ mod app {
         layout: Layout<NUM_COLS, NUM_ROWS, NUM_LAYERS>,
         matrix: Matrix<ErasedPin<Input<PullUp>>, ErasedPin<Output>, NUM_COLS, NUM_ROWS>,
         timer: CounterHz<TIM3>,
-        watchdog: IndependentWatchdog,
+        // watchdog: IndependentWatchdog,
     }
 
     #[shared]
@@ -109,8 +109,8 @@ mod app {
         timer.start(1.kHz()).unwrap();
 
         // timer is running 10x faster so should catch a problem fast
-        let mut watchdog = IndependentWatchdog::new(device.IWDG);
-        watchdog.start(10.millis());
+        // let mut watchdog = IndependentWatchdog::new(device.IWDG);
+        // watchdog.start(10.millis());
 
         (
             Shared { usb },
@@ -118,7 +118,7 @@ mod app {
                 layout,
                 matrix,
                 timer,
-                watchdog,
+                // watchdog,
             },
             init::Monotonics(),
         )
@@ -136,7 +136,7 @@ mod app {
             layout,
             matrix,
             timer,
-            watchdog,
+            // watchdog,
         ],
         shared = [usb],
     )]
@@ -146,12 +146,12 @@ mod app {
             layout,
             matrix,
             timer,
-            watchdog,
+            // watchdog,
         } = cx.local;
         let tick::SharedResources { mut usb } = cx.shared;
 
         timer.clear_interrupt(Event::Update);
-        watchdog.feed();
+        // watchdog.feed();
 
         for event in debouncer.events(matrix.get().unwrap()) {
             layout.event(event);
