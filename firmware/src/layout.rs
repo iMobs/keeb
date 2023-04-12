@@ -3,7 +3,9 @@
 
 use keyberon::layout::{layout, Layers};
 
-use crate::{NUM_COLS, NUM_LAYERS, NUM_ROWS};
+pub const NUM_COLS: usize = 14;
+pub const NUM_ROWS: usize = 6;
+pub const NUM_LAYERS: usize = 2;
 
 pub static LAYERS: Layers<NUM_COLS, NUM_ROWS, NUM_LAYERS> = layout! {
     {
