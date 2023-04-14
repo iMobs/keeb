@@ -14,6 +14,9 @@ use stm32f1xx_hal::{
     rcc::Clocks,
 };
 
+/// Standard initialization of clocks at 48 MHz
+///
+/// TBD if an external crystal will be necessary and what speed.
 pub fn configure_clocks(flash: FLASH, rcc: RCC) -> Clocks {
     let mut flash = flash.constrain();
     let rcc = rcc.constrain();
