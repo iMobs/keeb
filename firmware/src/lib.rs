@@ -7,7 +7,10 @@ pub mod pins;
 pub mod usb;
 
 use defmt_rtt as _;
+#[cfg(debug_assertions)]
 use panic_probe as _;
+#[cfg(not(debug_assertions))]
+use panic_reset as _;
 use stm32f1xx_hal::{
     pac::{FLASH, RCC},
     prelude::*,

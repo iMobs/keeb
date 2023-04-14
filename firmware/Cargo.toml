@@ -13,6 +13,7 @@ defmt = "0.3.4"
 defmt-rtt = "0.4.0"
 keyberon = { git = "https://github.com/TeXitoi/keyberon", branch = "master" }
 panic-probe = { version = "0.3.1", features = ["print-defmt"] }
+panic-reset = "0.1.1"
 stm32f1xx-hal = { version = "0.10.0", features = ["stm32f103", "rtic", "stm32-usbd"] }
 usb-device = { version = "0.2.9", features = ["defmt"] }
 

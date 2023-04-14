@@ -276,6 +276,7 @@ dependencies = [
  "defmt-rtt",
  "keyberon",
  "panic-probe",
+ "panic-reset",
  "stm32f1xx-hal",
  "usb-device",
 ]
@@ -336,6 +337,15 @@ checksum = "aa6fa5645ef5a760cd340eaa92af9c1ce131c8c09e7f8926d8a24b59d26652b9"
 dependencies = [
  "cortex-m",
  "defmt",
+]
+
+[[package]]
+name = "panic-reset"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cf1ff2a5b1a478dd94572aa43476b6630e72071cbd016985003ad3903a3a4f5"
+dependencies = [
+ "cortex-m",
 ]
 
 [[package]]
